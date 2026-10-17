@@ -1,15 +1,15 @@
 # 部署與 Gateway 後端 TLS
 
-一般內網安裝請先參考 [Ubuntu 內網部署](lan/README.md)。本文件記錄 `herder-home.vanisoul.com` 的 Gateway 配套與 Caddy 憑證簽發、CA 匯出流程。
+一般內網安裝請先參考 [Ubuntu 內網部署](lan/README.md)。本文件記錄 `herdr-home.vanisoul.com` 的 Gateway 配套與 Caddy 憑證簽發、CA 匯出流程。
 
 ## 連線路徑
 
 ```text
-herder-home.vanisoul.com
+herdr-home.vanisoul.com
   → Cloudflare A 記錄：158.179.186.45（proxied = true）
   → NetBird reverse proxy：HTTPS → 172.22.88.50（保留 Host）
   → traefik-gateway / HTTPRoute
-  → herder-home Service / EndpointSlice
+  → herdr-home Service / EndpointSlice
   → HTTPS → 172.22.88.35:8443（Caddy）
   → HTTP → 127.0.0.1:7317（Web UI）
 ```
@@ -26,7 +26,7 @@ herder-home.vanisoul.com
 cd "$HOME/repo/github/vanisoul/herdr-web-ui"
 python3 deploy/lan/configure.py \
   --host 172.22.88.35 \
-  --tls-hostname herder-home.vanisoul.com
+  --tls-hostname herdr-home.vanisoul.com
 ```
 
 若 PATH 上的 Bun 版本不足，請加上 `--bun-bin /完整路徑/bun`，指定實際服務使用的 Bun（至少 1.4.0）。本次主機使用：
@@ -34,7 +34,7 @@ python3 deploy/lan/configure.py \
 ```bash
 python3 deploy/lan/configure.py \
   --host 172.22.88.35 \
-  --tls-hostname herder-home.vanisoul.com \
+  --tls-hostname herdr-home.vanisoul.com \
   --bun-bin "$HOME/.local/share/mise/installs/bun/1.4.2/bin/bun"
 ```
 
@@ -43,7 +43,7 @@ python3 deploy/lan/configure.py \
 產生的 Caddy site addresses 應為：
 
 ```caddyfile
-https://172.22.88.35:8443, https://herder-home.vanisoul.com:8443 {
+https://172.22.88.35:8443, https://herdr-home.vanisoul.com:8443 {
     bind 0.0.0.0
     tls internal
     reverse_proxy 127.0.0.1:7317 {
@@ -58,15 +58,15 @@ https://172.22.88.35:8443, https://herder-home.vanisoul.com:8443 {
 先以暫存檔驗證，再安裝並重啟；`admin off` 的設定不能使用 `caddy reload`。重啟會短暫中斷 Web UI 連線，但不會重啟 Herdr 或 Web UI 程序。
 
 ```bash
-sudo install -m 644 "$HOME/.config/herdr-web-ui/Caddyfile" /etc/caddy/Caddyfile.herder-home
-sudo -u caddy caddy validate --config /etc/caddy/Caddyfile.herder-home --adapter caddyfile
-sudo install -m 644 /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-herder-home
-sudo install -m 644 /etc/caddy/Caddyfile.herder-home /etc/caddy/Caddyfile
+sudo install -m 644 "$HOME/.config/herdr-web-ui/Caddyfile" /etc/caddy/Caddyfile.herdr-home
+sudo -u caddy caddy validate --config /etc/caddy/Caddyfile.herdr-home --adapter caddyfile
+sudo install -m 644 /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-herdr-home
+sudo install -m 644 /etc/caddy/Caddyfile.herdr-home /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 systemctl is-active caddy
 ```
 
-如需回復，將 `/etc/caddy/Caddyfile.before-herder-home` 安裝回 `/etc/caddy/Caddyfile`，再重啟 Caddy。
+如需回復，將 `/etc/caddy/Caddyfile.before-herdr-home` 安裝回 `/etc/caddy/Caddyfile`，再重啟 Caddy。
 
 ## 2. 匯出既有 CA 的公開憑證
 
@@ -95,8 +95,8 @@ openssl x509 -in "$HOME/.config/herdr-web-ui/root.crt" \
 ```bash
 curl --noproxy '*' \
   --cacert "$HOME/.config/herdr-web-ui/root.crt" \
-  --resolve herder-home.vanisoul.com:8443:172.22.88.35 \
-  -I https://herder-home.vanisoul.com:8443/
+  --resolve herdr-home.vanisoul.com:8443:172.22.88.35 \
+  -I https://herdr-home.vanisoul.com:8443/
 
 curl --noproxy '*' \
   --cacert "$HOME/.config/herdr-web-ui/root.crt" \
@@ -111,41 +111,41 @@ curl --noproxy '*' \
 
 ```bash
 OPS_REPO="$HOME/repo/github/vanisoul/pev88-ops"
-kubectl create configmap herder-home-ca \
-  --namespace herder-home \
+kubectl create configmap herdr-home-ca \
+  --namespace herdr-home \
   --from-file=ca.crt="$HOME/.config/herdr-web-ui/root.crt" \
   --dry-run=client -o yaml \
-  > "$OPS_REPO/06-k3s-cluster/herder-home/k8s/15-ca-configmap.yaml"
+  > "$OPS_REPO/06-k3s-cluster/herdr-home/k8s/15-ca-configmap.yaml"
 
 kubectl apply --dry-run=client --validate=true \
-  -k "$OPS_REPO/06-k3s-cluster/herder-home/k8s"
-kubectl apply -k "$OPS_REPO/06-k3s-cluster/herder-home/k8s"
+  -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
+kubectl apply -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
 ```
 
-`BackendTLSPolicy` 必須和 Service、CA ConfigMap 位於相同的 `herder-home` namespace，內容重點為：
+`BackendTLSPolicy` 必須和 Service、CA ConfigMap 位於相同的 `herdr-home` namespace，內容重點為：
 
 ```yaml
 spec:
   targetRefs:
     - group: ""
       kind: Service
-      name: herder-home
+      name: herdr-home
   validation:
-    hostname: herder-home.vanisoul.com
+    hostname: herdr-home.vanisoul.com
     caCertificateRefs:
       - group: ""
         kind: ConfigMap
-        name: herder-home-ca
+        name: herdr-home-ca
 ```
 
 ConfigMap 的資料鍵必須是 `ca.crt`。Service 的 `8443` 連接埠透過 EndpointSlice 對應 `172.22.88.35:8443`；Policy 的 hostname 提供後端 SNI 與憑證名稱驗證，不改寫 HTTP Host。
 
 ```bash
-kubectl describe backendtlspolicy herder-home -n herder-home
-kubectl describe httproute herder-home -n herder-home
+kubectl describe backendtlspolicy herdr-home -n herdr-home
+kubectl describe httproute herdr-home -n herdr-home
 curl --noproxy '*' \
-  --resolve herder-home.vanisoul.com:443:172.22.88.50 \
-  -I https://herder-home.vanisoul.com/
+  --resolve herdr-home.vanisoul.com:443:172.22.88.50 \
+  -I https://herdr-home.vanisoul.com/
 ```
 
 確認 Policy／Route 的 `Accepted`、相關 `ResolvedRefs` 條件成功，且 Gateway 回傳 `200`。這項測試不使用 `-k` 或跳過後端 TLS 驗證。
@@ -156,17 +156,17 @@ curl --noproxy '*' \
 
 | 設定 | 檔案 |
 | --- | --- |
-| Gateway、Service、EndpointSlice、CA 與 BackendTLSPolicy | `06-k3s-cluster/herder-home/k8s/` |
-| NetBird 反向代理 | `07-netbird-deploy/reverse_proxy.tf` 的 `herder_home` |
-| Cloudflare DNS | `08-cloudflare-dns/tokyo-dns.tf` 的 `herder_home` |
+| Gateway、Service、EndpointSlice、CA 與 BackendTLSPolicy | `06-k3s-cluster/herdr-home/k8s/` |
+| NetBird 反向代理 | `07-netbird-deploy/reverse_proxy.tf` 的 `herdr_home` |
+| Cloudflare DNS | `08-cloudflare-dns/tokyo-dns.tf` 的 `herdr_home` |
 
 NetBird 沿用其他 Web 服務的 Gateway 目標 `172.22.88.50`，保留 Host，並限制來源國家為 `TW`；Web UI 自身負責登入授權。Cloudflare A 記錄使用 `158.179.186.45`、`proxied = true`、`ttl = 1`。
 
-依各 Terraform 目錄既有的憑證載入流程執行 `terraform plan`，確認只有預期的新增資源後才執行 `terraform apply`。不要將其他既有差異一起套用。完成後再測試 `https://herder-home.vanisoul.com/`，以及登入後的 WebSocket 連線。
+依各 Terraform 目錄既有的憑證載入流程執行 `terraform plan`，確認只有預期的新增資源後才執行 `terraform apply`。不要將其他既有差異一起套用。完成後再測試 `https://herdr-home.vanisoul.com/`，以及登入後的 WebSocket 連線。
 
 ## 本次驗證紀錄
 
-2026-10-17：沿用現有 Caddy 根 CA，新增 DNS 名稱憑證。使用匯出的 CA、未略過憑證驗證，確認 `herder-home.vanisoul.com:8443` 與原本 `172.22.88.35:8443` 都回傳 `200`，匿名 `/api/session` 回傳 `401`。這不代表 Kubernetes、NetBird 或 Cloudflare 已套用；仍需依上述步驟部署並驗證。
+2026-10-17：沿用現有 Caddy 根 CA，新增 DNS 名稱憑證。使用匯出的 CA、未略過憑證驗證，確認 `herdr-home.vanisoul.com:8443` 與原本 `172.22.88.35:8443` 都回傳 `200`，匿名 `/api/session` 回傳 `401`。這不代表 Kubernetes、NetBird 或 Cloudflare 已套用；仍需依上述步驟部署並驗證。
 
 本次匯出根 CA 的 SHA-256 指紋：
 
