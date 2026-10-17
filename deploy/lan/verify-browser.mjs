@@ -4,12 +4,23 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, X509Certificate } from 'node:crypto';
+import { connect } from 'node:tls';
 
 const config = join(homedir(), '.config/herdr-web-ui');
 const deployment = JSON.parse(readFileSync(join(config, 'deployment.json'), 'utf8'));
 const raw = readFileSync(join(config, 'lan.env'), 'utf8').split('\n').find(line => line.startsWith('HERDR_WEB_TOKEN=')).slice('HERDR_WEB_TOKEN='.length);
 const token = raw.startsWith('"') ? JSON.parse(raw) : raw;
-const cert = new X509Certificate(readFileSync(deployment.leaf_file));
+// Verify the live certificate against our trusted CA before using its SPKI pin.
+const certificate = await new Promise((resolve, reject) => {
+  const socket = connect({host:deployment.host, port:deployment.https_port, ca:readFileSync(deployment.ca_file)}, () => {
+    const raw = socket.getPeerCertificate().raw;
+    socket.end();
+    resolve(raw);
+  });
+  socket.setTimeout(10000, () => socket.destroy(new Error('TLS 連線逾時')));
+  socket.on('error', reject);
+});
+const cert = new X509Certificate(certificate);
 const pin = createHash('sha256').update(cert.publicKey.export({type:'spki',format:'der'})).digest('base64');
 const browser = await chromium.launch({headless:true,args:['--ignore-certificate-errors-spki-list=' + pin]});
 try {

@@ -4,12 +4,10 @@
 	skip_install_trust
 }
 
-https://{$HERDR_LAN_HOST}:{$HERDR_LAN_HTTPS_PORT} {
-	bind {$HERDR_LAN_HOST}
+https://@HOST@:8443 {
+	bind 0.0.0.0
 	tls internal
-	@outside not remote_ip {$HERDR_LAN_ALLOW}
-	respond @outside 403
-	reverse_proxy 127.0.0.1:{$HERDR_LAN_BACKEND_PORT} {
+	reverse_proxy 127.0.0.1:7317 {
 		header_up -Tailscale-User-Login
 		header_up -Tailscale-Funnel-Request
 	}
