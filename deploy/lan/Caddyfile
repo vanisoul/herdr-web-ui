@@ -4,7 +4,7 @@
 	skip_install_trust
 }
 
-https://@HOST@:8443 {
+https://@HOST@:8443@TLS_SITE@ {
 	bind 0.0.0.0
 	tls internal
 	reverse_proxy 127.0.0.1:7317 {

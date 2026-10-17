@@ -89,6 +89,22 @@ def require_version(tool, minimum):
         raise ValueError(f"{tool.name} 版本過舊；至少需要 {'.'.join(map(str, minimum))}")
 
 
+def render_caddyfile(template, host, tls_hostname=None):
+    extra_site = ""
+    if tls_hostname:
+        name = tls_hostname.lower()
+        if len(name) > 253 or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", name):
+            raise ValueError("--tls-hostname 請填寫有效的 DNS 名稱，不含連接埠或萬用字元")
+        try:
+            ipaddress.ip_address(name)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("--tls-hostname 必須是 DNS 名稱，不可使用 IP")
+        extra_site = f", https://{name}:8443"
+    return template.replace("@HOST@", host).replace("@TLS_SITE@", extra_site)
+
+
 def configure(args):
     if os.getuid() == 0:
         raise ValueError("請以執行 Herdr 的一般使用者執行此步驟，不要使用 sudo")
@@ -123,7 +139,7 @@ def configure(args):
     })
     config.mkdir(parents=True, exist_ok=True)
     config.chmod(0o700)
-    caddyfile = (repo / "deploy/lan/Caddyfile").read_text().replace("@HOST@", host)
+    caddyfile = render_caddyfile((repo / "deploy/lan/Caddyfile").read_text(), host, args.tls_hostname)
     with tempfile.TemporaryDirectory() as temporary:
         path = Path(temporary) / "Caddyfile"
         path.write_text(caddyfile)
@@ -133,7 +149,7 @@ def configure(args):
     atomic_write(config / "Caddyfile", caddyfile, 0o644)
     atomic_write(config / "herdr-web-ui.service", service, 0o644)
     deployment = {"host": host, "https_port": 8443, "backend_port": 7317, "repo": str(repo),
-                  "ca_file": str(config / "root.crt")}
+                  "ca_file": str(config / "root.crt"), "tls_hostname": args.tls_hostname}
     atomic_write(config / "deployment.json", json.dumps(deployment, indent=2) + "\n")
     print(f"已產生部署設定；密碼與配對資料保留，首次部署則建立隨機密碼。\n入口：https://{host}:8443/")
     print("請依 README 將 Caddyfile 與 service 安裝到系統，並啟動兩個服務。")
@@ -142,6 +158,7 @@ def configure(args):
 def main():
     parser = argparse.ArgumentParser(description="產生 Caddy 與 Herdr Web UI 的系統服務設定")
     parser.add_argument("--host", required=True, help="用來連線的主機 IPv4")
+    parser.add_argument("--tls-hostname", help="額外的 HTTPS DNS 名稱，由 Caddy 內部 CA 簽發憑證")
     parser.add_argument("--herdr-socket", default=os.environ.get("HERDR_SOCKET_PATH", str(Path.home() / ".config/herdr/herdr.sock")))
     for name in ("bun", "node", "herdr"):
         parser.add_argument(f"--{name}-bin")

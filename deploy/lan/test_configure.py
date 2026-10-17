@@ -53,7 +53,7 @@ class DeploymentTests(unittest.TestCase):
             (config / "devices.json").write_text("device-fixture")
             socket_path = Path(temporary) / "herdr.sock"
             server.bind(str(socket_path))
-            args = SimpleNamespace(host="192.168.10.20", herdr_socket=str(socket_path),
+            args = SimpleNamespace(host="192.168.10.20", tls_hostname="herder-home.vanisoul.com", herdr_socket=str(socket_path),
                                    **{name + "_bin": sys.executable for name in ("bun", "node", "herdr")})
             with patch.object(configure, "__file__", str(repo / "deploy/lan/configure.py")), \
                  patch.object(configure.Path, "home", return_value=home), \
@@ -67,7 +67,8 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual(len(token), 64)
                 self.assertNotIn(token, output.getvalue())
                 self.assertNotIn(token, (config / "Caddyfile").read_text())
-                self.assertIn("https://192.168.10.20:8443", (config / "Caddyfile").read_text())
+                self.assertIn("https://192.168.10.20:8443, https://herder-home.vanisoul.com:8443", (config / "Caddyfile").read_text())
+                self.assertEqual(json.loads((config / "deployment.json").read_text())["tls_hostname"], args.tls_hostname)
                 configure.configure(args)
                 self.assertEqual(configure.read_env(config / "lan.env")["HERDR_WEB_TOKEN"], token)
                 self.assertEqual((config / "devices.json").read_text(), "device-fixture")
@@ -77,6 +78,15 @@ class DeploymentTests(unittest.TestCase):
                 with self.assertRaises(subprocess.CalledProcessError):
                     configure.configure(args)
                 self.assertEqual((config / "lan.env").read_bytes(), before)
+
+    def test_caddyfile_optional_tls_hostname(self):
+        self.assertIn("https://192.168.10.20:8443 {", configure.render_caddyfile(TEMPLATE, "192.168.10.20"))
+        rendered = configure.render_caddyfile(TEMPLATE, "192.168.10.20", "Herder-Home.Vanisoul.com")
+        self.assertIn("https://192.168.10.20:8443, https://herder-home.vanisoul.com:8443 {", rendered)
+        self.assertNotIn("@TLS_SITE@", rendered)
+        for name in ("172.22.88.35", "*.example.com", "host:8443", "https://host", "host\n}", "-host.example", "host..example", "a" * 64 + ".example", "a." * 127 + "a"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                configure.render_caddyfile(TEMPLATE, "192.168.10.20", name)
 
     def test_guard(self):
         for host, token, accepted in [("127.0.0.1", "x" * 64, True), ("0.0.0.0", "x" * 64, False), ("127.0.0.1", "", False)]:
