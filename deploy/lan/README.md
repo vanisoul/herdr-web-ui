@@ -1,6 +1,6 @@
 # Ubuntu 內網部署
 
-透過 Gateway 公開 `herdr-home.vanisoul.com` 的後端憑證與 CA 匯出流程，請參考 [Gateway 後端 TLS](../README.md)。
+透過內網 Admin Gateway 存取 `herdr-home.admin.vanisoul.com` 的後端憑證與 CA 匯出流程，請參考 [Gateway 後端 TLS](../README.md)。
 
 完成後有兩個系統服務，重開機會自動啟動：
 

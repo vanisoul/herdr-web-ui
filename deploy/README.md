@@ -1,20 +1,20 @@
-# 部署與 Gateway 後端 TLS
+# 內網 Admin Gateway 與後端 TLS
 
-一般內網安裝請先參考 [Ubuntu 內網部署](lan/README.md)。本文件記錄 `herdr-home.vanisoul.com` 的 Gateway 配套與 Caddy 憑證簽發、CA 匯出流程。
+一般內網安裝請先參考 [Ubuntu 內網部署](lan/README.md)。本文件記錄 `herdr-home.admin.vanisoul.com` 的 Admin Gateway 配套與 Caddy 憑證簽發、CA 匯出流程。
 
 ## 連線路徑
 
 ```text
-herdr-home.vanisoul.com
-  → Cloudflare A 記錄：158.179.186.45（proxied = true）
-  → NetBird reverse proxy：HTTPS → 172.22.88.50（保留 Host）
-  → traefik-gateway / HTTPRoute
-  → herdr-home Service / EndpointSlice
+內網用戶端：https://herdr-home.admin.vanisoul.com/
+  → traefik-admin-gateway：172.22.88.48:443
+  → HTTPRoute / herdr-home Service / EndpointSlice
   → HTTPS → 172.22.88.35:8443（Caddy）
   → HTTP → 127.0.0.1:7317（Web UI）
 ```
 
-外部 TLS 由 Cloudflare／NetBird／Gateway 的既有設定處理；Gateway 到 Caddy 的 TLS 則由 `BackendTLSPolicy` 驗證，兩者的信任鏈不同。瀏覽器透過公開網址使用時，不需要安裝 Caddy CA；直接連內網 IP 的裝置仍需信任它。Web UI 原本的 Token／裝置授權維持不變。
+這是僅供內網存取的 Internal Operations Service。用戶端需透過既有內網 DNS，或本機名稱對應，將 `herdr-home.admin.vanisoul.com` 解析至 `172.22.88.48`。下列驗證使用 `curl --resolve`，可獨立確認路由。
+
+Admin Gateway 使用既有 `*.admin.vanisoul.com` 憑證；Gateway 到 Caddy 的 TLS 則由 `BackendTLSPolicy` 驗證，兩者的信任鏈不同。瀏覽器透過 Admin Gateway 存取時，不需要安裝 Caddy CA；直接連內網 IP 的裝置仍需信任它。Web UI 原本的 Token／裝置授權維持不變。
 
 ## 1. 讓 Caddy 簽發 DNS 名稱憑證
 
@@ -26,7 +26,7 @@ herdr-home.vanisoul.com
 cd "$HOME/repo/github/vanisoul/herdr-web-ui"
 python3 deploy/lan/configure.py \
   --host 172.22.88.35 \
-  --tls-hostname herdr-home.vanisoul.com
+  --tls-hostname herdr-home.admin.vanisoul.com
 ```
 
 若 PATH 上的 Bun 版本不足，請加上 `--bun-bin /完整路徑/bun`，指定實際服務使用的 Bun（至少 1.4.0）。本次主機使用：
@@ -34,7 +34,7 @@ python3 deploy/lan/configure.py \
 ```bash
 python3 deploy/lan/configure.py \
   --host 172.22.88.35 \
-  --tls-hostname herdr-home.vanisoul.com \
+  --tls-hostname herdr-home.admin.vanisoul.com \
   --bun-bin "$HOME/.local/share/mise/installs/bun/1.4.2/bin/bun"
 ```
 
@@ -43,7 +43,7 @@ python3 deploy/lan/configure.py \
 產生的 Caddy site addresses 應為：
 
 ```caddyfile
-https://172.22.88.35:8443, https://herdr-home.vanisoul.com:8443 {
+https://172.22.88.35:8443, https://herdr-home.admin.vanisoul.com:8443 {
     bind 0.0.0.0
     tls internal
     reverse_proxy 127.0.0.1:7317 {
@@ -53,7 +53,7 @@ https://172.22.88.35:8443, https://herdr-home.vanisoul.com:8443 {
 }
 ```
 
-`tls internal` 使用原本的 Caddy Local Authority，不向公開 CA 申請憑證，也不需要先變更公網 DNS。不要刪除 Caddy 資料目錄或重新建立 CA。
+`tls internal` 使用原本的 Caddy Local Authority，不向公開 CA 申請憑證，也不依賴 DNS 驗證。不要刪除 Caddy 資料目錄或重新建立 CA。
 
 先以暫存檔驗證，再安裝並重啟；`admin off` 的設定不能使用 `caddy reload`。重啟會短暫中斷 Web UI 連線，但不會重啟 Herdr 或 Web UI 程序。
 
@@ -88,15 +88,15 @@ openssl x509 -in "$HOME/.config/herdr-web-ui/root.crt" \
 
 透過可信管道傳遞此公開憑證並核對指紋。若 Caddy 根 CA 未變，葉憑證自動續期時不必更新 Kubernetes ConfigMap。
 
-## 3. 驗證憑證、SNI 與原本 IP 入口
+## 3. 驗證後端憑證、SNI 與原本 IP 入口
 
-不要使用 `-k`；以下同時驗證信任鏈與 DNS 名稱，`--resolve` 讓測試不依賴公網 DNS：
+不要使用 `-k`；以下同時驗證信任鏈與 DNS 名稱，`--resolve` 讓測試不依賴 DNS：
 
 ```bash
 curl --noproxy '*' \
   --cacert "$HOME/.config/herdr-web-ui/root.crt" \
-  --resolve herdr-home.vanisoul.com:8443:172.22.88.35 \
-  -I https://herdr-home.vanisoul.com:8443/
+  --resolve herdr-home.admin.vanisoul.com:8443:172.22.88.35 \
+  -I https://herdr-home.admin.vanisoul.com:8443/
 
 curl --noproxy '*' \
   --cacert "$HOME/.config/herdr-web-ui/root.crt" \
@@ -119,6 +119,20 @@ kubectl create configmap herdr-home-ca \
 
 kubectl apply --dry-run=client --validate=true \
   -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
+```
+
+先確認只有下列六個目標資源：`herdr-home` Namespace、同名 Service／EndpointSlice／HTTPRoute／BackendTLSPolicy，以及 `herdr-home-ca` ConfigMap。若 Namespace 尚不存在，先建立它，再檢查其餘資源的 server-side dry-run 與 diff；`kubectl diff` 回傳 `1` 表示有差異，`0` 表示無差異，其他值表示錯誤。
+
+```bash
+# Namespace 尚不存在時，僅先建立已確認的 Namespace：
+kubectl create namespace herdr-home --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply --dry-run=server -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
+kubectl diff -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
+```
+
+確認差異只有目標資源後，再套用：
+
+```bash
 kubectl apply -k "$OPS_REPO/06-k3s-cluster/herdr-home/k8s"
 ```
 
@@ -131,7 +145,7 @@ spec:
       kind: Service
       name: herdr-home
   validation:
-    hostname: herdr-home.vanisoul.com
+    hostname: herdr-home.admin.vanisoul.com
     caCertificateRefs:
       - group: ""
         kind: ConfigMap
@@ -140,33 +154,31 @@ spec:
 
 ConfigMap 的資料鍵必須是 `ca.crt`。Service 的 `8443` 連接埠透過 EndpointSlice 對應 `172.22.88.35:8443`；Policy 的 hostname 提供後端 SNI 與憑證名稱驗證，不改寫 HTTP Host。
 
+HTTPRoute 僅掛在 `traefik-admin` namespace 的 `traefik-admin-gateway`，並指定 `sectionName: https`。此 Gateway 的既有位址為 `172.22.88.48`。
+
+## 5. 驗證 Admin Gateway
+
 ```bash
 kubectl describe backendtlspolicy herdr-home -n herdr-home
 kubectl describe httproute herdr-home -n herdr-home
 curl --noproxy '*' \
-  --resolve herdr-home.vanisoul.com:443:172.22.88.50 \
-  -I https://herdr-home.vanisoul.com/
+  --resolve herdr-home.admin.vanisoul.com:443:172.22.88.48 \
+  -I https://herdr-home.admin.vanisoul.com/
+curl --noproxy '*' \
+  --resolve herdr-home.admin.vanisoul.com:443:172.22.88.48 \
+  -o /dev/null -w '%{http_code}\n' \
+  https://herdr-home.admin.vanisoul.com/api/session
 ```
 
-確認 Policy／Route 的 `Accepted`、相關 `ResolvedRefs` 條件成功，且 Gateway 回傳 `200`。這項測試不使用 `-k` 或跳過後端 TLS 驗證。
+確認 Policy／Route 的 `Accepted`、相關 `ResolvedRefs` 條件成功，Gateway 首頁回傳 `200`，匿名 API 回傳 `401`。這項測試不使用 `-k` 或跳過後端 TLS 驗證。登入後再確認 WebSocket 連線。
 
-## 5. NetBird 與 Cloudflare
+## 本次部署紀錄
 
-對應設定都在 `pev88-ops`：
+2026-10-17：已確認異動僅為 `herdr-home` 專屬 Namespace 與五個目標資源，完成 server-side dry-run 與 diff 後套用 Kubernetes。HTTPRoute 掛在 Admin Gateway，Route 與 BackendTLSPolicy 的 `Accepted`、`ResolvedRefs` 均為 `True`。
 
-| 設定 | 檔案 |
-| --- | --- |
-| Gateway、Service、EndpointSlice、CA 與 BackendTLSPolicy | `06-k3s-cluster/herdr-home/k8s/` |
-| NetBird 反向代理 | `07-netbird-deploy/reverse_proxy.tf` 的 `herdr_home` |
-| Cloudflare DNS | `08-cloudflare-dns/tokyo-dns.tf` 的 `herdr_home` |
+透過 `172.22.88.48` 測試 `https://herdr-home.admin.vanisoul.com/`，未略過憑證驗證，首頁回傳 `200`，匿名 `/api/session` 回傳 `401`。Caddy 原本的 IP 入口保留。
 
-NetBird 沿用其他 Web 服務的 Gateway 目標 `172.22.88.50`，保留 Host，並限制來源國家為 `TW`；Web UI 自身負責登入授權。Cloudflare A 記錄使用 `158.179.186.45`、`proxied = true`、`ttl = 1`。
-
-依各 Terraform 目錄既有的憑證載入流程執行 `terraform plan`，確認只有預期的新增資源後才執行 `terraform apply`。不要將其他既有差異一起套用。完成後再測試 `https://herdr-home.vanisoul.com/`，以及登入後的 WebSocket 連線。
-
-## 本次驗證紀錄
-
-2026-10-17：沿用現有 Caddy 根 CA，新增 DNS 名稱憑證。使用匯出的 CA、未略過憑證驗證，確認 `herdr-home.vanisoul.com:8443` 與原本 `172.22.88.35:8443` 都回傳 `200`，匿名 `/api/session` 回傳 `401`。這不代表 Kubernetes、NetBird 或 Cloudflare 已套用；仍需依上述步驟部署並驗證。
+## CA 指紋
 
 本次匯出根 CA 的 SHA-256 指紋：
 

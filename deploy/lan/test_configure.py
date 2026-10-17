@@ -53,7 +53,7 @@ class DeploymentTests(unittest.TestCase):
             (config / "devices.json").write_text("device-fixture")
             socket_path = Path(temporary) / "herdr.sock"
             server.bind(str(socket_path))
-            args = SimpleNamespace(host="192.168.10.20", tls_hostname="herdr-home.vanisoul.com", herdr_socket=str(socket_path),
+            args = SimpleNamespace(host="192.168.10.20", tls_hostname="herdr-home.admin.vanisoul.com", herdr_socket=str(socket_path),
                                    **{name + "_bin": sys.executable for name in ("bun", "node", "herdr")})
             with patch.object(configure, "__file__", str(repo / "deploy/lan/configure.py")), \
                  patch.object(configure.Path, "home", return_value=home), \
@@ -67,7 +67,7 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual(len(token), 64)
                 self.assertNotIn(token, output.getvalue())
                 self.assertNotIn(token, (config / "Caddyfile").read_text())
-                self.assertIn("https://192.168.10.20:8443, https://herdr-home.vanisoul.com:8443", (config / "Caddyfile").read_text())
+                self.assertIn("https://192.168.10.20:8443, https://herdr-home.admin.vanisoul.com:8443", (config / "Caddyfile").read_text())
                 self.assertEqual(json.loads((config / "deployment.json").read_text())["tls_hostname"], args.tls_hostname)
                 configure.configure(args)
                 self.assertEqual(configure.read_env(config / "lan.env")["HERDR_WEB_TOKEN"], token)
@@ -81,8 +81,8 @@ class DeploymentTests(unittest.TestCase):
 
     def test_caddyfile_optional_tls_hostname(self):
         self.assertIn("https://192.168.10.20:8443 {", configure.render_caddyfile(TEMPLATE, "192.168.10.20"))
-        rendered = configure.render_caddyfile(TEMPLATE, "192.168.10.20", "Herdr-Home.Vanisoul.com")
-        self.assertIn("https://192.168.10.20:8443, https://herdr-home.vanisoul.com:8443 {", rendered)
+        rendered = configure.render_caddyfile(TEMPLATE, "192.168.10.20", "Herdr-Home.Admin.Vanisoul.com")
+        self.assertIn("https://192.168.10.20:8443, https://herdr-home.admin.vanisoul.com:8443 {", rendered)
         self.assertNotIn("@TLS_SITE@", rendered)
         for name in ("172.22.88.35", "*.example.com", "host:8443", "https://host", "host\n}", "-host.example", "host..example", "a" * 64 + ".example", "a." * 127 + "a"):
             with self.subTest(name=name), self.assertRaises(ValueError):
